@@ -6,9 +6,11 @@ import threading
 import sys
 import logging
 import queue
+import os
 
 from .constants import USER_APP_NAME, APP_NAME
 from .conffile import confdir
+from .conf import settings
 from .clients import clientManager
 from .utils import get_resource
 from .log_utils import CustomFormatter, root_logger
@@ -16,42 +18,95 @@ from .i18n import _
 
 log = logging.getLogger("gui_mgr")
 
-# From https://stackoverflow.com/questions/6631299/
-# This is for opening the config directory.
-
-
-def _show_file_darwin(path: str):
-    subprocess.Popen(["open", path])
-
-
-def _show_file_xdg(path: str):
-    subprocess.Popen(["xdg-open", path])
-
-
 def _show_file_win32(path: str):
     subprocess.Popen(["explorer", path])
 
 
-_show_file_func = {
-    "darwin": _show_file_darwin,
-    "linux": _show_file_xdg,
-    "openbsd": _show_file_xdg,
-    "win32": _show_file_win32,
-    "cygwin": _show_file_win32,
-}
+def open_config():
+    _show_file_win32(confdir(APP_NAME))
 
-try:
-    show_file = None
-    for platform, func in _show_file_func.items():
-        if sys.platform.startswith(platform):
-            show_file = func
 
-    def open_config():
-        show_file(confdir(APP_NAME))
+def _load_windows_exe_icon(path: str, size: int = 64):
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except Exception:
+        return None
 
-except KeyError:
-    open_config = None
-    log.warning("Platform does not support opening folders.")
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ("biSize", wintypes.DWORD),
+            ("biWidth", wintypes.LONG),
+            ("biHeight", wintypes.LONG),
+            ("biPlanes", wintypes.WORD),
+            ("biBitCount", wintypes.WORD),
+            ("biCompression", wintypes.DWORD),
+            ("biSizeImage", wintypes.DWORD),
+            ("biXPelsPerMeter", wintypes.LONG),
+            ("biYPelsPerMeter", wintypes.LONG),
+            ("biClrUsed", wintypes.DWORD),
+            ("biClrImportant", wintypes.DWORD),
+        ]
+
+    class BITMAPINFO(ctypes.Structure):
+        _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 1)]
+
+    shell32 = ctypes.windll.shell32
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+
+    hicon = wintypes.HANDLE()
+    extracted = shell32.ExtractIconExW(path, 0, ctypes.byref(hicon), None, 1)
+    if extracted != 1 or not hicon.value:
+        return None
+
+    screen_dc = user32.GetDC(None)
+    memory_dc = gdi32.CreateCompatibleDC(screen_dc)
+    bitmap = None
+    old_bitmap = None
+
+    try:
+        bitmap_info = BITMAPINFO()
+        bitmap_info.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bitmap_info.bmiHeader.biWidth = size
+        bitmap_info.bmiHeader.biHeight = -size
+        bitmap_info.bmiHeader.biPlanes = 1
+        bitmap_info.bmiHeader.biBitCount = 32
+        bitmap_info.bmiHeader.biCompression = 0
+
+        pixels = ctypes.c_void_p()
+        bitmap = gdi32.CreateDIBSection(
+            memory_dc, ctypes.byref(bitmap_info), 0, ctypes.byref(pixels), None, 0
+        )
+        if not bitmap or not pixels.value:
+            return None
+
+        old_bitmap = gdi32.SelectObject(memory_dc, bitmap)
+        if not user32.DrawIconEx(memory_dc, 0, 0, hicon.value, size, size, 0, None, 0x0003):
+            return None
+
+        raw = ctypes.string_at(pixels, size * size * 4)
+        return Image.frombuffer("RGBA", (size, size), raw, "raw", "BGRA", 0, 1).copy()
+    finally:
+        user32.DestroyIcon(hicon.value)
+        if old_bitmap:
+            gdi32.SelectObject(memory_dc, old_bitmap)
+        if bitmap:
+            gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(memory_dc)
+        user32.ReleaseDC(None, screen_dc)
+
+
+def _get_tray_icon():
+    if sys.platform.startswith("win32") and settings.mpv_ext_path:
+        mpv_path = os.path.expandvars(os.path.expanduser(settings.mpv_ext_path))
+        if os.path.isfile(mpv_path):
+            icon = _load_windows_exe_icon(mpv_path)
+            if icon is not None:
+                return icon
+            log.warning("Could not load tray icon from %s. Falling back to default.", mpv_path)
+    return Image.open(get_resource("systray.png"))
+
 
 # Setup a log handler for log items.
 log_cache = deque([], 1000)
@@ -451,16 +506,6 @@ class STrayProcess(Process):
         Process.__init__(self)
 
     def run(self):
-        import os
-        import sys
-
-        # Force X11 backend for GTK to fix Wayland startup issues. GDK_BACKEND
-        # and WAYLAND_DISPLAY only mean anything to GTK on Linux/BSD; on
-        # Windows and macOS pystray uses native APIs, so leave the env alone.
-        if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
-            os.environ.pop("WAYLAND_DISPLAY", None)
-            os.environ["GDK_BACKEND"] = "x11"
-
         try:
             from pystray import Icon, MenuItem, Menu
         except Exception as e:
@@ -475,12 +520,7 @@ class STrayProcess(Process):
             return wrapper
 
         def die():
-            # We don't call self.icon_stop() because it crashes on Linux now...
-            if sys.platform == "linux":
-                # This kills the status icon uncleanly.
-                self.r_queue.put(("die", None))
-            else:
-                self.icon_stop()
+            self.icon_stop()
 
         menu_items = [
             MenuItem(_("Configure Servers"), get_wrapper("show_preferences")),
@@ -491,7 +531,7 @@ class STrayProcess(Process):
         ]
 
         icon = Icon(APP_NAME, title=USER_APP_NAME, menu=Menu(*menu_items))
-        icon.icon = Image.open(get_resource("systray.png"))
+        icon.icon = _get_tray_icon()
         self.icon_stop = icon.stop
 
         def setup(icon: Icon):

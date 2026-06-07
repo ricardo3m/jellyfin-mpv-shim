@@ -12,11 +12,10 @@ license-files = ["LICENSE.md"]
 requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
 ]
 dynamic = ["version"]
 dependencies = [
-    "python-mpv>=1.0.8",
     "jellyfin-apiclient-python>=1.12.0",
     "python-mpv-jsonipc>=1.2.2",
     "requests",

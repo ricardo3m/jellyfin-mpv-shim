@@ -2,7 +2,6 @@
 
 import logging
 import sys
-import multiprocessing
 from threading import Event
 
 from . import conffile
@@ -21,6 +20,9 @@ logging.getLogger("requests").setLevel(logging.CRITICAL)
 
 
 def main():
+    if not (sys.platform.startswith("win32") or sys.platform.startswith("cygwin")):
+        raise SystemExit("jellyfin-mpv-shim only supports Windows.")
+
     args = get_args()
 
     conf_file = conffile.get(APP_NAME, "conf.json")
@@ -43,17 +45,6 @@ def main():
         configure_log_file(log_file, app_log_level)
 
     log = root_logger
-
-    if sys.platform.startswith("darwin"):
-        try:
-            # Use 'spawn' to avoid Objective-C fork crashes with GUI frameworks.
-            # - Python 3.7: default is 'fork' (unsafe with Obj-C)
-            # - Python 3.8+: default is 'spawn' (this is a no-op but explicit)
-            # - Python 3.14: 'forkserver' also crashes with Obj-C (issue #473)
-            multiprocessing.set_start_method("spawn")
-        except RuntimeError:
-            # Context already set, ignore
-            pass
 
     user_interface = None
     mirror = None
