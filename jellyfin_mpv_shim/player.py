@@ -171,12 +171,6 @@ class PlayerManager(object):
 
             mpv_options["osc"] = False
 
-        # ensure standard mpv configuration directories and files exist
-        conffile.get_dir(APP_NAME, "scripts")
-        conffile.get_dir(APP_NAME, "fonts")
-        conffile.get(APP_NAME, "input.conf", True)
-        conffile.get(APP_NAME, "mpv.conf", True)
-
         if scripts:
             mpv_options["script"] = scripts
 
@@ -469,18 +463,7 @@ class PlayerManager(object):
         @self._player.event_callback("client-message")
         def handle_client_message(event):
             try:
-                # Python-MPV 1.0 uses a class/struct combination now
-                if hasattr(event, "as_dict"):
-                    event = event.as_dict()
-                    if "event" in event:
-                        event["event"] = event["event"].decode("utf-8")
-                    if "args" in event:
-                        event["args"] = [d.decode("utf-8") for d in event["args"]]
-
-                if "event_id" in event:
-                    args = event["event"]["args"]
-                else:
-                    args = event["args"]
+                args = event["args"]
                 if len(args) == 0:
                     return
                 if args[0] == "shim-menu-select":
