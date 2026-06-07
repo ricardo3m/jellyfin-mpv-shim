@@ -3,8 +3,6 @@ import os
 import sys
 import time
 
-import platform
-
 from threading import RLock, Lock, Event
 from queue import Queue
 from collections import OrderedDict
@@ -35,29 +33,11 @@ if settings.discord_presence:
     except Exception:
         log.error("Could not enable Discord Rich Presence.", exc_info=True)
 
-python_mpv_available = True
-is_using_ext_mpv = False
-if not settings.mpv_ext:
-    try:
-        # noinspection PyPackageRequirements
-        import mpv
+import python_mpv_jsonipc as mpv
 
-        log.info("Using libmpv playback backend.")
-    except OSError:
-        log.warning("Could not find libmpv.")
-        python_mpv_available = False
+log.info("Using external mpv playback backend.")
 
-if settings.mpv_ext or not python_mpv_available:
-    import python_mpv_jsonipc as mpv
-
-    log.info("Using external mpv playback backend.")
-    is_using_ext_mpv = True
-
-# Collect backend-specific exceptions for MPV disconnection/shutdown.
-# libmpv raises ShutdownError; external mpv (jsonipc) raises BrokenPipeError.
 _mpv_errors = (BrokenPipeError,)
-if hasattr(mpv, "ShutdownError"):
-    _mpv_errors = (BrokenPipeError, mpv.ShutdownError)
 
 SUBTITLE_POS = {
     "top": 0,
@@ -90,20 +70,12 @@ def wait_property(
         if cond(value):
             event.set()
 
-    if is_using_ext_mpv:
-        observer_id = instance.bind_property_observer(name, handler)
-        if timeout:
-            success = event.wait(timeout=timeout)
-        else:
-            event.wait()
-        instance.unbind_property_observer(observer_id)
+    observer_id = instance.bind_property_observer(name, handler)
+    if timeout:
+        success = event.wait(timeout=timeout)
     else:
-        instance.observe_property(name, handler)
-        if timeout:
-            success = event.wait(timeout=timeout)
-        else:
-            event.wait()
-        instance.unobserve_property(name, handler)
+        event.wait()
+    instance.unbind_property_observer(observer_id)
     return success
 
 
@@ -167,25 +139,18 @@ class PlayerManager(object):
 
     def _init_mpv(self):
         mpv_location = settings.mpv_ext_path
-        if (
-            mpv_location is None
-            and platform.system() == "Darwin"
-            and getattr(sys, "frozen", False)
-        ):
-            mpv_location = get_resource("mpv")
 
         mpv_options = OrderedDict()
-        if is_using_ext_mpv:
-            mpv_options.update(
-                {
-                    "start_mpv": settings.mpv_ext_start,
-                    "ipc_socket": settings.mpv_ext_ipc,
-                    "mpv_location": mpv_location,
-                    "player-operation-mode": "cplayer",
-                    "start_retries": settings.mpv_ext_start_retries,
-                    "start_retry_delay_ms": settings.mpv_ext_start_retry_delay_ms,
-                }
-            )
+        mpv_options.update(
+            {
+                "start_mpv": settings.mpv_ext_start,
+                "ipc_socket": settings.mpv_ext_ipc,
+                "mpv_location": mpv_location,
+                "player-operation-mode": "cplayer",
+                "start_retries": settings.mpv_ext_start_retries,
+                "start_retry_delay_ms": settings.mpv_ext_start_retry_delay_ms,
+            }
+        )
 
         scripts = []
         if settings.menu_mouse:
@@ -213,14 +178,9 @@ class PlayerManager(object):
         conffile.get(APP_NAME, "mpv.conf", True)
 
         if scripts:
-            if settings.mpv_ext:
-                mpv_options["script"] = scripts
-            else:
-                mpv_options["scripts"] = (
-                    ";" if sys.platform.startswith("win32") else ":"
-                ).join(scripts)
+            mpv_options["script"] = scripts
 
-        if not (settings.mpv_ext and settings.mpv_ext_no_ovr):
+        if not settings.mpv_ext_no_ovr:
             mpv_options["config"] = True
             mpv_options["config_dir"] = conffile.confdir(APP_NAME)
 
@@ -1238,8 +1198,7 @@ class PlayerManager(object):
 
     def terminate(self):
         self.stop()
-        if is_using_ext_mpv:
-            self._player.terminate()
+        self._player.terminate()
 
         if self.trickplay:
             self.trickplay.stop()
@@ -1328,7 +1287,7 @@ class PlayerManager(object):
             self._handle_mpv_disconnect()
 
     def enable_osc(self, enabled: bool):
-        if settings.mpv_ext and settings.mpv_ext_no_ovr:
+        if settings.mpv_ext_no_ovr:
             return  # Don't override user's MPV config
 
         if not self._mpv_alive:

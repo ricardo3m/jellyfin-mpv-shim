@@ -62,7 +62,6 @@ class Settings(SettingsBase):
     fullscreen: bool = True
     enable_gui: bool = True
     media_key_seek: bool = False
-    mpv_ext: bool = sys.platform.startswith("darwin")
     mpv_ext_path: Optional[str] = None
     mpv_ext_ipc: Optional[str] = None
     mpv_ext_start: bool = True
