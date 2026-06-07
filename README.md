@@ -5,7 +5,7 @@
 [![Translation Status](https://translate.jellyfin.org/widgets/jellyfin/-/jellyfin-mpv-shim/svg-badge.svg)](https://translate.jellyfin.org/projects/jellyfin/jellyfin-mpv-shim/)
 [![Code Stype](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Jellyfin MPV Shim is a cross-platform cast client for Jellyfin.
+Jellyfin MPV Shim is a Windows cast client for Jellyfin.
 It has support for all your advanced media files without transcoding, as well as tons of
 features which set it apart from other multimedia clients:
 
@@ -26,9 +26,7 @@ To learn more, keep reading. This README explains everything, including [configu
 
 ## Getting Started
 
-If you are on Windows, simply [download the binary](https://github.com/jellyfin/jellyfin-mpv-shim/releases).
-If you are using Linux, you can [install via flathub](https://flathub.org/apps/details/com.github.iwalton3.jellyfin-mpv-shim) or [install via pip](https://github.com/jellyfin/jellyfin-mpv-shim#linux-installation<>). If you are on macOS, see the [macOS Installation](https://github.com/jellyfin/jellyfin-mpv-shim#osx-installation)
-section below.
+On Windows, simply [download the binary](https://github.com/jellyfin/jellyfin-mpv-shim/releases).
 
 To use the client, simply launch it and log into your Jellyfin server. You’ll need to enter the
 URL to your server, for example `http://server_ip:8096` or `https://secure_domain`. Make sure to

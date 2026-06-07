@@ -18,42 +18,12 @@ from .i18n import _
 
 log = logging.getLogger("gui_mgr")
 
-# From https://stackoverflow.com/questions/6631299/
-# This is for opening the config directory.
-
-
-def _show_file_darwin(path: str):
-    subprocess.Popen(["open", path])
-
-
-def _show_file_xdg(path: str):
-    subprocess.Popen(["xdg-open", path])
-
-
 def _show_file_win32(path: str):
     subprocess.Popen(["explorer", path])
 
 
-_show_file_func = {
-    "darwin": _show_file_darwin,
-    "linux": _show_file_xdg,
-    "openbsd": _show_file_xdg,
-    "win32": _show_file_win32,
-    "cygwin": _show_file_win32,
-}
-
-try:
-    show_file = None
-    for platform, func in _show_file_func.items():
-        if sys.platform.startswith(platform):
-            show_file = func
-
-    def open_config():
-        show_file(confdir(APP_NAME))
-
-except KeyError:
-    open_config = None
-    log.warning("Platform does not support opening folders.")
+def open_config():
+    _show_file_win32(confdir(APP_NAME))
 
 
 def _load_windows_exe_icon(path: str, size: int = 64):
@@ -536,16 +506,6 @@ class STrayProcess(Process):
         Process.__init__(self)
 
     def run(self):
-        import os
-        import sys
-
-        # Force X11 backend for GTK to fix Wayland startup issues. GDK_BACKEND
-        # and WAYLAND_DISPLAY only mean anything to GTK on Linux/BSD; on
-        # Windows and macOS pystray uses native APIs, so leave the env alone.
-        if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
-            os.environ.pop("WAYLAND_DISPLAY", None)
-            os.environ["GDK_BACKEND"] = "x11"
-
         try:
             from pystray import Icon, MenuItem, Menu
         except Exception as e:
@@ -560,12 +520,7 @@ class STrayProcess(Process):
             return wrapper
 
         def die():
-            # We don't call self.icon_stop() because it crashes on Linux now...
-            if sys.platform == "linux":
-                # This kills the status icon uncleanly.
-                self.r_queue.put(("die", None))
-            else:
-                self.icon_stop()
+            self.icon_stop()
 
         menu_items = [
             MenuItem(_("Configure Servers"), get_wrapper("show_preferences")),
